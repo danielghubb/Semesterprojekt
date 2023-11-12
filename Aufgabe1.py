@@ -20,8 +20,6 @@ class CSVDataset(Dataset):
         # store the inputs and outputs
         xy = np.loadtxt("/home/sar-user/Projekte/Semesterprojekt/data.csv", delimiter = "," , dtype= np.float32)
         #normalisieren und zu tensor transformen
-        #self.y = torch.from_numpy(xy[:,8:])
-        #self.x = torch.from_numpy(xy[:,:8])
         self.y = F.normalize(torch.from_numpy(xy[:,8:]), p=2.0, dim=0)
         self.x = F.normalize(torch.from_numpy(xy[:,:8]), p=2.0, dim=0)
         self.n_samples = xy.shape[0]
@@ -43,7 +41,7 @@ dataset = CSVDataset()
 #print(feat, label)
 
 # select rows from the dataset
-train, test =  torch.utils.data.random_split(dataset, [0.8, 0.2])
+train, test =  torch.utils.data.random_split(dataset, [0.66, 0.34])
 #print(len(train))
 #print(len(test))
 
@@ -69,9 +67,9 @@ optimizer = optim.Adam(model.parameters(), lr=0.000001) #gradient decent, effice
 
 
 # Hold the best model
-best_mse = np.inf   # init to infinity
-best_weights = None
-history = []
+best_mse = np.inf
+eval_history = []
+train_history = []
 
 
 #Trainieren
@@ -86,11 +84,12 @@ def train(epoch):
         loss = loss_fn(out, target)
         
         #backward pass
-        optimizer.zero_grad
+        optimizer.zero_grad()
         loss.backward()
 
         #update
         optimizer.step()
+
 
 
 def evaluate(epoch):
@@ -106,30 +105,65 @@ def evaluate(epoch):
         epoch_mse.append(mse)
     
     print(np.mean(epoch_mse))
-    history.append(np.mean(epoch_mse))
+    eval_history.append(np.mean(epoch_mse))
 
-        #if mse < best_mse:
-        #    best_mse = mse
-        #    best_weights = copy.deepcopy(model.state_dict())
+
+
+def evaluate_train_data(epoch):
+    model.eval()
+    epoch_mse_train = []
+    for batch_id, (data, target) in enumerate (train_dl):
+        data = Variable(data)
+        target = Variable(target)
+
+        y_pred = model(data)
+        mse = loss_fn(y_pred, target)
+        mse = float(mse)
+        epoch_mse_train.append(mse)
+    
+    print(np.mean(epoch_mse_train))
+    train_history.append(np.mean(epoch_mse_train))
     
 
 
 
 
 print("Training beginnt")
-epoch = 1
 
-for epoch in range (1, 30):
+for epoch in range (1, 10):
     print("Epoch: " + str(epoch))
+
+    #training, Evaluation
     train(epoch)
+    evaluate_train_data(epoch)
     evaluate(epoch)
+
+    #bestes Modell speichern
+    if epoch == 1:
+        torch.save(model.state_dict(), 'model_checkpoint.pth')
+    else:
+        if eval_history[-1] < eval_history[-2]:
+            torch.save(model.state_dict(), 'model_checkpoint.pth')
  
 
-# restore model and return best accuracy
-#model.load_state_dict(best_weights)
-#print("MSE: %.2f" % best_mse)
-#print("RMSE: %.2f" % np.sqrt(best_mse))
-print(history)
-type(history)
-plt.plot(history)
-plt.show
+# plot MSE Loss on Train and Test Data
+plt.plot(eval_history, color='red', label='MSE loss test data')
+plt.plot(train_history, color='blue', label='MSE loss train data')
+plt.xlabel('Epoche')
+plt.ylabel('Mean MSE Loss')
+plt.legend()
+plt.show()
+
+
+
+#load best Model todo
+kwargs = {}
+args =[]
+best_model = model(*args, **kwargs)
+best_model.load_state_dict(torch.load('model_checkpoint.pth'))
+
+#forward some inputs todo
+indices = torch.randperm(len(test))[:10]
+forward_values = torch.tensor([train[indices[i]] for i in range (0,9)])
+
+print(forward_values)
