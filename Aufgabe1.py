@@ -53,18 +53,18 @@ test_dl = DataLoader(test, batch_size=64, shuffle=False)
 
 #Model Definition
 model = nn.Sequential(
-    nn.Linear(8, 32),
+    nn.Linear(8, 512),
     nn.ReLU(),
-    nn.Linear(32, 24),
+    nn.Linear(512, 256),
     nn.ReLU(),
-    nn.Linear(24, 12),
+    nn.Linear(256, 128),
     nn.ReLU(),
-    nn.Linear(12, 6)
+    nn.Linear(128, 6),
 )
 
 # loss function and optimizer
 loss_fn = nn.MSELoss()  # mean square error
-optimizer = optim.Adam(model.parameters(), lr=0.000001) #gradient decent, efficent with less memory use
+optimizer = optim.Adam(model.parameters(), lr=0.00001) #gradient decent, efficent with less memory use
 
 
 # Hold the best model
@@ -131,7 +131,7 @@ def evaluate_train_data(epoch):
 
 print("Training beginnt")
 
-for epoch in range (1, 15):
+for epoch in range (1, 500):
     print("Epoch: " + str(epoch))
 
     #training, Evaluation
