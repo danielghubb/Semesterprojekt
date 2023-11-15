@@ -6,22 +6,34 @@ from torchvision import datasets, transforms
 from torch.autograd import Variable
 import torchvision
 from torch.utils.data import Dataset, DataLoader
-
 import numpy as np
 import math
 import copy
 import matplotlib.pyplot as plt
+import random
+from sklearn.preprocessing import MinMaxScaler
+mms = MinMaxScaler(feature_range=(0,1))
 
+
+
+##########Hyperparameter###########
+epochen = 30
+lr = 0.00001
+batchsize = 64
+##########Hyperparameter###########
 
 # dataset definition
 class CSVDataset(Dataset):
     # load the dataset
     def __init__(self):
         # store the inputs and outputs
-        xy = np.loadtxt("/home/sar-user/Projekte/Semesterprojekt/data.csv", delimiter = "," , dtype= np.float32)
+        xy = mms.fit_transform(np.loadtxt("/home/sar-user/Projekte/Semesterprojekt/data.csv", delimiter = "," , dtype= np.float32))
         #normalisieren und zu tensor transformen
-        self.y = F.normalize(torch.from_numpy(xy[:,8:]), p=2.0, dim=1)
-        self.x = F.normalize(torch.from_numpy(xy[:,:8]), p=2.0, dim=1)
+        #self.y = F.normalize(torch.from_numpy(xy[:,8:]), p=2.0, dim=1)
+        #self.x = F.normalize(torch.from_numpy(xy[:,:8]), p=2.0, dim=1)
+        self.y = torch.from_numpy(xy[:,8:])
+        self.x = torch.from_numpy(xy[:,:8])
+        
         self.n_samples = xy.shape[0]
         
 
@@ -47,24 +59,26 @@ train, test =  torch.utils.data.random_split(dataset, [0.66, 0.34])
 #print(len(test))
 
 # create a data loader for train and test sets
-train_dl = DataLoader(train, batch_size=64, shuffle=True)
-test_dl = DataLoader(test, batch_size=64, shuffle=False)
+train_dl = DataLoader(train, batchsize, shuffle=True)
+test_dl = DataLoader(test, batchsize, shuffle=False)
 
 
 #Model Definition
 model = nn.Sequential(
-    nn.Linear(8, 512),
-    nn.ReLU(),
-    nn.Linear(512, 256),
+    nn.Linear(8, 256),
     nn.ReLU(),
     nn.Linear(256, 128),
     nn.ReLU(),
-    nn.Linear(128, 6),
+    nn.Linear(128, 64),
+    nn.ReLU(),
+    nn.Linear(64, 32),
+    nn.ReLU(),
+    nn.Linear(32, 6)
 )
 
 # loss function and optimizer
 loss_fn = nn.MSELoss()  # mean square error
-optimizer = optim.Adam(model.parameters(), lr=0.00001) #gradient decent, efficent with less memory use
+optimizer = optim.Adam(model.parameters(), lr) #gradient decent, efficent with less memory use
 
 
 # Hold the best model
@@ -105,7 +119,6 @@ def evaluate(epoch):
         mse = float(mse)
         epoch_mse.append(mse)
     
-    print(np.mean(epoch_mse))
     eval_history.append(np.mean(epoch_mse))
 
 
@@ -131,7 +144,7 @@ def evaluate_train_data(epoch):
 
 print("Training beginnt")
 
-for epoch in range (1, 500):
+for epoch in range (1, epochen+1):
     print("Epoch: " + str(epoch))
 
     #training, Evaluation
@@ -154,7 +167,7 @@ plt.xlabel('Epoche')
 plt.ylabel('Mean MSE Loss')
 plt.legend()
 plt.show()
-
+plt.savefig('foo.png')
 
 #load best Model todo
 #kwargs = {}
@@ -176,17 +189,39 @@ for i in range(0,9):
     y_pred = model(data)
     array_pred.append(y_pred.detach().numpy())
 
+
+null_matrix = np.zeros((9,8))
 matrix_target = np.reshape(array_target, (-1,6))
 matrix_pred = np.reshape(array_pred, (-1,6))
 
-print(matrix_target)
-print(matrix_pred)
+matrix_target_full = np.append(null_matrix,matrix_target, axis =1)
+matrix_pred_full = np.append(null_matrix,matrix_pred, axis =1)
+
+matrix_target_revers = mms.inverse_transform(matrix_target_full)[:,8:]
+matrix_pred_revers = mms.inverse_transform(matrix_pred_full)[:,8:]
+
 
 for i in range(0,6):
     plt.scatter(matrix_target[:,i], matrix_pred[:,i], label = f'Variable = {i + 1}')
 
+plt.axline((0, 0), slope=1, color='k')
 plt.title('Scatterplot nach Outputvariable')
 plt.xlabel('Target')
 plt.ylabel('Prediction')
 plt.legend()
 plt.show()
+
+
+for i in range(0,6):
+    plt.scatter(matrix_target_revers[:,i], matrix_pred_revers[:,i], label = f'Variable = {i + 1}')
+    plt.axline((0, 0), slope=1, color='k')
+    plt.title(f'Scatterplot nach Outputvariable {i+1}')
+    plt.xlabel('Target')
+    plt.ylabel('Prediction')
+    plt.legend()
+    plt.show()
+
+
+
+
+
