@@ -33,9 +33,6 @@ class H5Dataset(Dataset):
         self.h5_file = h5py.File(file_path, 'r')
         self.group_names = list(self.h5_file.keys())
 
-        # Initialize MinMaxScaler for normalization
-        self.scaler = MinMaxScaler()
-
     def __len__(self):
         return len(self.group_names)
 
