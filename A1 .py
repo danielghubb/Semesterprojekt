@@ -2,6 +2,7 @@ import torch
 import os
 import pandas as pd
 import numpy as np
+from numpy import array
 import matplotlib.pyplot as plt
 import h5py
 
@@ -16,6 +17,15 @@ from sklearn.preprocessing import MinMaxScaler
 ##########Hyperparameter#############
 batch_size = 32
 ##########Hyperparameter#############
+
+#daten wurden durch script getMinMax generiert
+mins = torch.Tensor(array([70.00147072, 1.50000067, 300.00161826, 0.00200653, 0.0014694, 3000, 0.5000061]))
+maxs = torch.Tensor(array([149.99962444, 2.99992871, 799.99556485, 99.9966234, 99.9995793, 10000, 2.99250181]))
+
+def normalize(tensor):
+    for i in range (7):
+        tensor[i] = (tensor[i]- mins[i])/(maxs[i]-mins[i])
+    return tensor
 
 class H5Dataset(Dataset):
     def __init__(self, file_path):
@@ -37,16 +47,9 @@ class H5Dataset(Dataset):
         x_data = torch.Tensor(group['X'][:])
         y_data = torch.Tensor(group['Y'][:])
 
-        # Flatten the data for MinMaxScaler
-        #x_data_flat = x_data.view(x_data.size(0), -1)
+        x_data_normal = normalize(x_data[:7])
 
-        # Normalize using MinMaxScaler
-        #x_data_normalized = torch.Tensor(self.scaler.fit_transform(x_data_flat.numpy()))
-
-        # Reshape back to the original shape
-        #x_data_normalized = x_data_normalized.view(x_data.size())
-        # Return only the first 7 variables
-        return x_data[:7], y_data
+        return x_data_normal, y_data
 
     def close(self):
         self.h5_file.close()
