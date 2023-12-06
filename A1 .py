@@ -38,15 +38,15 @@ class H5Dataset(Dataset):
         y_data = torch.Tensor(group['Y'][:])
 
         # Flatten the data for MinMaxScaler
-        x_data_flat = x_data.view(x_data.size(0), -1)
+        #x_data_flat = x_data.view(x_data.size(0), -1)
 
         # Normalize using MinMaxScaler
-        x_data_normalized = torch.Tensor(self.scaler.fit_transform(x_data_flat.numpy()))
+        #x_data_normalized = torch.Tensor(self.scaler.fit_transform(x_data_flat.numpy()))
 
         # Reshape back to the original shape
-        x_data_normalized = x_data_normalized.view(x_data.size())
+        #x_data_normalized = x_data_normalized.view(x_data.size())
         # Return only the first 7 variables
-        return x_data_normalized[:7], y_data
+        return x_data[:7], y_data
 
     def close(self):
         self.h5_file.close()
