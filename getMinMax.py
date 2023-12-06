@@ -1,7 +1,7 @@
 import h5py
 import numpy as np
 
-file_path = r'../Aufgabe2/data.h5'
+file_path = '/home/kali/Projects/Semesterprojekt/rzp-1_sphere1mm_train_100k.h5'
 mins = [float('inf')] * 7
 maxs = [float('-inf')] * 7
 
