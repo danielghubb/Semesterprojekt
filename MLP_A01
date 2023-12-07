@@ -1,0 +1,189 @@
+import copy
+import time
+import h5py
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+from sklearn import preprocessing
+import torch
+import torch.nn as nn
+import torch.optim as optim
+from torch.utils.data import DataLoader, TensorDataset
+import torch.optim.lr_scheduler as lr_scheduler
+import tqdm
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import MinMaxScaler
+
+# Set a random seed for reproducibility
+torch.manual_seed(42)
+
+class DataPreparation:
+    @staticmethod
+    def prepare_data(path, num_inputs, num_outputs):
+        data = pd.read_hdf(path, key='0')
+        # Find constant columns, else normalization wouldn't work
+        data = data.loc[:, (data != data.iloc[0]).any()]
+
+        # Label input 0-6, output 0-4 just for clarity
+        data.columns = np.concatenate(
+            (["Input %s" % i for i in range(num_inputs)], ["Output %s" % i for i in range(num_outputs)])
+        )
+
+        scaler = MinMaxScaler()
+        scaler.fit(data)
+        normalized_data = scaler.transform(data)
+
+        train, test = train_test_split(normalized_data, train_size=0.67, shuffle=True)
+
+        x_train, y_train = train[:, :num_inputs], train[:, num_inputs:]
+        x_test, y_test = test[:, :num_inputs], test[:, num_inputs:]
+
+        return x_train, y_train, x_test, y_test, scaler
+
+class NeuralNetwork(nn.Module):
+    def __init__(self):
+        super(NeuralNetwork, self).__init__()
+        self.model = nn.Sequential(
+            nn.Linear(7, 512),
+            nn.ReLU(),
+            nn.Linear(512, 256),
+            nn.ReLU(),
+            nn.Linear(256, 128),
+            nn.ReLU(),
+            nn.Linear(128, 5)
+        )
+
+    def forward(self, x):
+        return self.model(x)
+
+class Training:
+    @staticmethod
+    def train_model(model, train_loader, n_epochs, optimizer, scheduler, device):
+  
+        best_mse = np.inf  # init to infinity
+        best_weights = None
+        history = []
+
+        for epoch in range(n_epochs):
+            model.train().to(device)
+            
+            # Use tqdm to create a loading bar for training batches
+            with tqdm.tqdm(total=len(train_loader), unit="batch", leave=False) as data_loader:
+                for batch_idx, (X_batch, y_batch) in enumerate(train_loader):
+                    X_batch, y_batch = X_batch.to(device), y_batch.to(device)
+                    optimizer.zero_grad()
+                    y_pred = model(X_batch)
+                    loss = loss_fn(y_pred, y_batch)
+                    loss.backward()
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1)
+                    optimizer.step()
+
+                    data_loader.set_postfix({'MSE': loss.item()})
+                    data_loader.update()
+
+                # Evaluate accuracy at the end of each epoch
+                model.eval()
+                with torch.no_grad():
+                    y_pred = model(X_test).cpu()
+                    mse = loss_fn(y_pred, y_test)
+                    mse = float(mse)
+                    print(f'MSE: {mse}')
+                    history.append(mse)
+
+                    if mse < best_mse:
+                        best_mse = mse
+                        best_weights = copy.deepcopy(model.cpu().state_dict())
+
+                if epoch == int(n_epochs / 2):
+                    torch.save(model, f'./model_{model_nr}_checkpoint.pth')
+
+        # Restore model and return best accuracy
+        model.load_state_dict(best_weights)
+        torch.save(model, f'./model_{model_nr}.pth')
+        print(f"MSE: {best_mse:.5f}")
+        print(f"RMSE: {np.sqrt(best_mse):.5f}")
+        plt.plot(history)
+        plt.savefig(f'loss_{model_nr}')
+
+class Inference:
+    @staticmethod
+    def perform_inference(model, X_test, y_test, nr_tests, scaler):
+ 
+        model.eval()
+        model.to(device)
+
+        indices = torch.randperm(len(X_test))[:nr_tests]
+        indices = indices.numpy()
+
+        array_target = []
+        array_pred = []
+        for i in range(nr_tests):
+            data = X_test.cpu()[indices[i]]
+            target = y_test.cpu()[indices[i]]
+            array_target.append(target.numpy())
+
+            y_pred = model(data)
+            array_pred.append(y_pred.detach().numpy())
+
+        null_matrix = np.zeros((nr_tests, 7))
+        matrix_target = np.reshape(array_target, (-1, 5))
+        matrix_pred = np.reshape(array_pred, (-1, 5))
+
+        matrix_target_full = np.append(null_matrix, matrix_target, axis=1)
+        matrix_pred_full = np.append(null_matrix, matrix_pred, axis=1)
+
+        matrix_target_revers = scaler.inverse_transform(matrix_target_full)[:, 7:]
+        matrix_pred_revers = scaler.inverse_transform(matrix_pred_full)[:, 7:]
+
+        # Plot the last 5 scatter plots as subplots in a single figure with 2 rows
+        fig, axs = plt.subplots(2, 3, figsize=(15, 10))
+
+        # Define a color map for each feature
+        colors = plt.cm.viridis(np.linspace(0, 1, 5))
+
+        for i in range(5):
+            row, col = divmod(i, 3)
+            axs[row, col].scatter(
+                matrix_target_revers[:, i], matrix_pred_revers[:, i],
+                label=f'Variable = {i + 1}', color=colors[i], alpha=0.8
+            )
+            axs[row, col].axline((0, 0), slope=1, color='k')
+            axs[row, col].set_title(f'Output Variable {i + 1}')
+            axs[row, col].set_xlabel('Target')
+            axs[row, col].set_ylabel('Prediction')
+            axs[row, col].legend()
+
+        # Hide empty subplot
+        axs[1, 2].axis('off')
+
+        plt.tight_layout()
+        plt.savefig(f'inference_{model_nr}')
+
+if __name__ == "__main__":
+    model_nr_list = [10,50,100]
+
+    for model_nr in model_nr_list:
+        path = './data.h5'
+        device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+        print(device)
+
+        x_train, y_train, x_test, y_test, scaler = DataPreparation.prepare_data(path, num_inputs=7, num_outputs=5)
+
+        train_dataset = TensorDataset(torch.tensor(x_train, dtype=torch.float32), torch.tensor(y_train, dtype=torch.float32).reshape(-1, 5))
+        train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
+
+        X_test = torch.tensor(x_test, dtype=torch.float32).to(device)
+        y_test = torch.tensor(y_test, dtype=torch.float32).reshape(-1, 5)
+
+        model = NeuralNetwork().to(device)
+
+        loss_fn = nn.MSELoss()  # mean square error
+        lr = 0.01
+        optimizer = optim.Adam(model.parameters(), lr=lr)
+        scheduler = lr_scheduler.LinearLR(optimizer, start_factor=1.0, end_factor=0.5, total_iters=30)
+
+        n_epochs = model_nr  # number of epochs to run
+
+        Training.train_model(model, train_loader, n_epochs, optimizer, scheduler, device)
+
+        Inference.perform_inference(model, X_test, y_test, nr_tests=30, scaler=scaler)
