@@ -23,9 +23,9 @@ from randomSplit import random_split
 
 
 ##########Hyperparameter#############
-file_path = r'/home/kali/Projects/Semesterprojekt/normed_data.h5'
+file_path = r'normed_data.h5'
 #file_path = r'/vol/fob-vol7/mi21/arendtda/Sempro/normed_data.h5'
-model_path = '/home/kali/Projects/Semesterprojekt/model_checkpoint_5.pth'
+model_path = r'C:\Users\fagda\Downloads\model_checkpoint_5.pth'
 #model_path = '/vol/fob-vol7/mi21/arendtda/Sempro/model_checkpoint_5.pth'
 batch_size = 32
 ##########Hyperparameter#############
@@ -97,25 +97,25 @@ class DeconvNet(nn.Module):
 
         return x
 
-minsY = [0]
-maxsY = [15526]
+minsY = [0, 15526]
+data = np.zeros((256, 256), float)
+data[0][0] = 0
+data[0][1] = 15526
 
-def createScaler():
-    yMms = MinMaxScaler(feature_range=(0,1))
-    y = [minsY * 256, maxsY * 256]
-    yMms.fit(y)
+# Flatten the 2D array before fitting to MinMaxScaler
+data_flat = data.flatten().reshape(-1, 1)
 
-    return yMms
-    
-model = torch.load(model_path)
-yScaler = createScaler()
+scaler = MinMaxScaler()
+scaler.fit(data_flat)
 
+model = torch.load(model_path).to(device)
 
 for inputs, labels in dataloader_test:
-    y_pred = model(Variable(inputs))
-    y_pred = yScaler.inverse_transform(y_pred)
+    y_pred = model(inputs.to(device)).cpu()
+    y_pred = scaler.inverse_transform(y_pred[0].detach().numpy().flatten().reshape(-1, 1)).reshape(256, 256)
+
     plt.imshow(labels[0])
     plt.show()
-    print(y_pred[0])
-    plt.imshow(y_pred[0].detach().numpy())
+    print(y_pred)
+    plt.imshow(y_pred)
     plt.show()
