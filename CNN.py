@@ -1,3 +1,6 @@
+import copy
+from os import write
+import sys
 import torch
 import torch.nn as nn
 import pandas as pd
@@ -10,24 +13,19 @@ from torch.utils.data import Dataset, DataLoader
 from torchvision.io import read_image
 from torchvision.transforms import ToTensor
 from torch.autograd import Variable
+import torch.optim as optim
+import torch.optim.lr_scheduler as lr_scheduler
 
 from randomSplit import random_split
-
-
-##########Hyperparameter#############
-#file_path = '/home/kali/Projects/Semesterprojekt/rzp-1_sphere1mm_train_100k.h5'
-file_path = '/vol/fob-vol7/mi21/arendtda/Sempro/rzp-1_sphere1mm_train_100k.h5'
-batch_size = 32
-##########Hyperparameter#############
 
 #daten wurden durch script getMinMax generiert
 mins = torch.Tensor(array([70.00147072, 1.50000067, 300.00161826, 0.00200653, 0.0014694, 3000, 0.5000061]))
 maxs = torch.Tensor(array([149.99962444, 2.99992871, 799.99556485, 99.9966234, 99.9995793, 10000, 2.99250181]))
 
 def normalize(tensor):
-    for i in range (7):
-        tensor[i] = (tensor[i]- mins[i])/(maxs[i]-mins[i])
-    return tensor
+        for i in range (7):
+            tensor[i] = (tensor[i]- mins[i])/(maxs[i]-mins[i])
+        return tensor
 
 class H5Dataset(Dataset):
     def __init__(self, file_path):
@@ -55,55 +53,114 @@ class H5Dataset(Dataset):
 
     def getmms(self):
         return self.scaler
-
-# initialise dataset and dataloader
-dataset = H5Dataset(file_path)
-
-train, test =  random_split(dataset, [0.66, 0.34])
-dataloader_train = DataLoader(train, batch_size=batch_size, shuffle=True)
-dataloader_test = DataLoader(test, batch_size=batch_size, shuffle=False)
-
-# Accessing the first group in the dataset
-#sample_x, sample_y = dataset[0]
-#print(dataset[0][0])
-#print("X data:", sample_x)
-#print("Y data:", sample_y)
-
-
+    
 class DeconvNet(nn.Module):
     def __init__(self):
         super(DeconvNet, self).__init__()
 
         # Input layer for 7 variables
         self.input_layer = nn.Linear(7, 1024)
+        self.act1 = nn.ReLU()
         # Fully connected layer to connect to the deconvolution layers
-        self.fc_layer = nn.Linear(1024, 256 * 254 * 254)
+        self.fc_layer = nn.Linear(1024, 256 * 32 * 32)  # Adjusted to match the product of deconv1 input size
+        self.act2 = nn.ReLU()
         # Deconvolution layers
-        self.deconv1 = nn.ConvTranspose2d(256, 1, kernel_size=4, stride=2)
+        self.deconv1 = nn.ConvTranspose2d(256, 128, kernel_size=4, stride=2, padding=1)  # Adjusted kernel_size and output channels
+        self.act3 = nn.ReLU()
+        self.deconv2 = nn.ConvTranspose2d(128, 64, kernel_size=4, stride=2, padding=1)   # Adjusted output channels and kernel_size
+        self.act4 = nn.ReLU()
+        self.deconv3 = nn.ConvTranspose2d(64, 1, kernel_size=4, stride=2, padding=1)    # Adjusted output channels and kernel_size
+        self.act5 = nn.ReLU()
 
     def forward(self, x):
         # Input layer
-        x = self.input_layer(x)
+        x = self.act1(self.input_layer(x))
         # Fully connected layer
-        x = self.fc_layer(x)
-        x = x.view(-1, 256, 254, 254)  # Reshape to (batch_size, 256, 254, 254)
-        # Deconvolution layer
-        x = self.deconv1(x)
+        x = self.act2(self.fc_layer(x))
+        x = x.reshape(-1, 256, 32, 32)  # Reshape to match deconv1 input size
+        # Deconvolution layers
+        x = self.act3(self.deconv1(x))
+        x = self.act4(self.deconv2(x))
+        x = self.act5(self.deconv3(x))
+        x = x.view(-1, 256, 256).squeeze()
 
         return x
 
-# Create an instance of the DeconvNet
-model = DeconvNet()
+def train():
+    ##########Hyperparameter#############
+    file_path = r'../Aufgabe2/data.h5'
+    batch_size = 32
+    lr = 0.001
+    ##########Hyperparameter#############
 
-# Example input with batch size 1 and 7 input channels
-input_data = Variable(dataset[0][0])
-#print(input_data)
-# Forward pass
-output = model(input_data)
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    #device = "cpu"
+    print(device)
 
-# Print the output shape
-print("Output shape:", output.shape)
-print(output)
+    # initialise dataset and dataloader
+    dataset = H5Dataset(file_path)
 
-# Closing the dataset
-dataset.close()
+    train, test =  random_split(dataset, [0.66, 0.34])
+    dataloader_train = DataLoader(train, batch_size=batch_size, shuffle=True, num_workers=6)
+    dataloader_test = DataLoader(test, batch_size=batch_size, shuffle=False, num_workers=6)
+
+    # Accessing the first group in the dataset
+    #sample_x, sample_y = dataset[0]
+    #print(dataset[0][0])
+    #print("X data:", sample_x)
+    #print("Y data:", sample_y)
+
+    for model_nr in [50]:
+        model = DeconvNet().to(device)
+        loss_fn = nn.CrossEntropyLoss()
+        optimizer = optim.SGD(model.parameters(), lr=lr, momentum=0.9)
+        scheduler = lr_scheduler.LinearLR(optimizer, start_factor=1.0, end_factor=0.5, total_iters=30)
+
+        n_epochs = model_nr
+        history = []
+        best_mse = np.inf 
+        for epoch in range(n_epochs):
+            print(f"epoch: {epoch}")
+            i = 0
+            for inputs, labels in dataloader_train:
+                # forward, backward, and then weight update
+                y_pred = model(inputs.to(device))
+                loss = loss_fn(y_pred.cpu(), labels)
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
+                print(f"training batch: ({i}/{len(dataloader_train)})", end='\r', flush=True)
+                i += 1
+            i = 0
+            model.to(device)
+            print('\n')
+            mse = []
+            for inputs, labels in dataloader_test:
+                y_pred = model(inputs.to(device))
+                loss = loss_fn(y_pred.cpu(), labels)
+                mse.append(float(loss))
+                print(f"test batch: ({i}/{len(dataloader_test)})", end='\r', flush=True)
+                i += 1
+            if epoch in [1, 5, 20, 50, 100, 200, 500]:
+                torch.save(model, './model' + '_checkpoint_' + str(epoch) + '.pth')
+                plt.plot(history)
+                plt.savefig('loss_' + str(epoch))
+                plt.close()
+            history.append(np.mean(mse))
+            before_lr = optimizer.param_groups[0]["lr"]
+            scheduler.step()
+            after_lr = optimizer.param_groups[0]["lr"]
+            print('\n')
+            print("Epoch %d: SGD lr %.4f -> %.4f" % (epoch, before_lr, after_lr))
+
+        model.cpu()
+
+        torch.save(model, './model_' + str(model_nr) + '.pth')
+        plt.plot(history)
+        plt.savefig('loss_' + str(epoch))
+        plt.close()
+        print("MSE: %.5f" % best_mse)
+        print("RMSE: %.5f" % np.sqrt(best_mse))
+
+if __name__ == '__main__':
+    train()
