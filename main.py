@@ -18,15 +18,6 @@ import torch.optim.lr_scheduler as lr_scheduler
 
 from randomSplit import random_split
 
-#daten wurden durch script getMinMax generiert
-mins = torch.Tensor(array([70.00147072, 1.50000067, 300.00161826, 0.00200653, 0.0014694, 3000, 0.5000061]))
-maxs = torch.Tensor(array([149.99962444, 2.99992871, 799.99556485, 99.9966234, 99.9995793, 10000, 2.99250181]))
-
-def normalize(tensor):
-        for i in range (7):
-            tensor[i] = (tensor[i]- mins[i])/(maxs[i]-mins[i])
-        return tensor
-
 class H5Dataset(Dataset):
     def __init__(self, file_path):
         self.file_path = file_path
@@ -44,7 +35,7 @@ class H5Dataset(Dataset):
         x_data = torch.Tensor(group['X'][:])
         y_data = torch.Tensor(group['Y'][:])
 
-        x_data_normal = normalize(x_data[:7])
+        x_data_normal = x_data[:7]
 
         return x_data_normal, y_data
 
@@ -88,7 +79,7 @@ class DeconvNet(nn.Module):
 
 def train():
     ##########Hyperparameter#############
-    file_path = r'../Aufgabe2/data.h5'
+    file_path = r'./normed_data_2mio.h5'
     batch_size = 32
     lr = 0.001
     ##########Hyperparameter#############
@@ -101,8 +92,8 @@ def train():
     dataset = H5Dataset(file_path)
 
     train, test =  random_split(dataset, [0.66, 0.34])
-    dataloader_train = DataLoader(train, batch_size=batch_size, shuffle=True, num_workers=6)
-    dataloader_test = DataLoader(test, batch_size=batch_size, shuffle=False, num_workers=6)
+    dataloader_train = DataLoader(train, batch_size=batch_size, shuffle=True, num_workers=32)
+    dataloader_test = DataLoader(test, batch_size=batch_size, shuffle=False, num_workers=32)
 
     # Accessing the first group in the dataset
     #sample_x, sample_y = dataset[0]
@@ -110,7 +101,7 @@ def train():
     #print("X data:", sample_x)
     #print("Y data:", sample_y)
 
-    for model_nr in [50]:
+    for model_nr in [500]:
         model = DeconvNet().to(device)
         loss_fn = nn.CrossEntropyLoss()
         optimizer = optim.SGD(model.parameters(), lr=lr, momentum=0.9)
@@ -122,26 +113,25 @@ def train():
         for epoch in range(n_epochs):
             print(f"epoch: {epoch}")
             i = 0
+            mse = []
             for inputs, labels in dataloader_train:
                 # forward, backward, and then weight update
                 y_pred = model(inputs.to(device))
-                loss = loss_fn(y_pred.cpu(), labels)
+                loss = loss_fn(y_pred, labels.to(device))
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
+                mse.append(float(loss.cpu()))
                 print(f"training batch: ({i}/{len(dataloader_train)})", end='\r', flush=True)
                 i += 1
             i = 0
             model.to(device)
             print('\n')
-            mse = []
             for inputs, labels in dataloader_test:
                 y_pred = model(inputs.to(device))
-                loss = loss_fn(y_pred.cpu(), labels)
-                mse.append(float(loss))
                 print(f"test batch: ({i}/{len(dataloader_test)})", end='\r', flush=True)
                 i += 1
-            if epoch in [1, 5, 20, 50, 100, 200, 500]:
+            if epoch in [1, 5, 20, 50, 100, 200, 300, 400, 500]:
                 torch.save(model, './model' + '_checkpoint_' + str(epoch) + '.pth')
                 plt.plot(history)
                 plt.savefig('loss_' + str(epoch))
