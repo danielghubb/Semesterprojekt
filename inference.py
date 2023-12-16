@@ -97,10 +97,10 @@ class DeconvNet(nn.Module):
 
         return x
 
-minsY = [0, 15526]
+minsY = [0, 17211]
 data = np.zeros((256, 256), float)
 data[0][0] = 0
-data[0][1] = 15526
+data[0][1] = 17211
 
 # Flatten the 2D array before fitting to MinMaxScaler
 data_flat = data.flatten().reshape(-1, 1)
