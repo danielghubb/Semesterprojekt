@@ -8,8 +8,8 @@ from sklearn.preprocessing import MinMaxScaler
 #file_path = '/vol/fob-vol7/mi21/arendtda/Sempro/rzp-1_sphere1mm_train_100k.h5'
 
 
-#file_path = '/vol/fob-vol7/mi21/arendtda/Sempro/rzp-1_sphere1mm_train_2million.h5'
-file_path = '/vol/fob-vol7/mi21/arendtda/Sempro/rzp-1_sphere1mm_train_2million_bin32.h5'
+file_path = '/vol/fob-vol7/mi21/arendtda/Sempro/rzp-1_sphere1mm_train_2million.h5'
+#file_path = '/vol/fob-vol7/mi21/arendtda/Sempro/rzp-1_sphere1mm_train_2million_bin32.h5'
 
 minsX = [float('inf')] * 7
 maxsX = [float('-inf')] * 7
@@ -75,7 +75,7 @@ def createScaler():
 
     return xMms, yMms
 
-def transfer(old_file_path, new_file_path):
+def minmax_transfer(old_file_path, new_file_path):
     newFile = h5py.File(new_file_path, 'w')
     oldFile = h5py.File(old_file_path, 'r')
 
@@ -95,17 +95,39 @@ def transfer(old_file_path, new_file_path):
     oldFile.close()
 
 
+def log_transfer(old_file_path, new_file_path):
+    newFile = h5py.File(new_file_path, 'w')
+    oldFile = h5py.File(old_file_path, 'r')
+
+    xScaler, yScaler = createScaler()
+
+    for group in oldFile:
+        print(group)
+        neueGruppe = newFile.create_group(f"{group}")
+
+        x_data = torch.Tensor(oldFile[group]['X'][:7])
+        x_data = x_data.reshape(1,-1)
+
+        neueGruppe.create_dataset('X', data = xScaler.transform(x_data), compression="gzip", compression_opts=9)
+        neueGruppe.create_dataset('Y', data = np.where(oldFile[group]['Y'] != 0, np.log2(oldFile[group]['Y']), oldFile[group]['Y']), compression="gzip", compression_opts=9)
+
+    newFile.close()
+    oldFile.close()
+
+
 #getMinMaxX(file_path)
-getMinMaxY(file_path)
-print("Der größte y Wert ist:")
-print(maxsY)
-print("Der kleinste y Wert ist:")
-print(minsY)
+#getMinMaxY(file_path)
+#print("Der größte y Wert ist:")
+#print(maxsY)
+#print("Der kleinste y Wert ist:")
+#print(minsY)
 
 minsX = [70, 1.5, 300, 0, 0, 3000, 0.5]
 maxsX = [150, 3, 800, 100, 100, 10000, 3]
 minsY = [0]
-#maxsY = [15526] auf 100k
+#maxsY = [15526] #auf 100k
 maxsY = [17211] #auf 2mio
+#maxsY = [33787]  #auf 2mio bin32
 
-#transfer(file_path,'/home/kali/Projects/Semesterprojekt/normed_data_2mio.h5')
+#minmax_transfer(file_path,'/vol/fob-vol7/mi21/arendtda/Sempro/normed_data_2mio.h5')
+log_transfer(file_path,'/vol/fob-vol7/mi21/arendtda/Sempro/log_normed_data_2mio.h5')
